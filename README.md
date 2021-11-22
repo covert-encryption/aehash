@@ -30,6 +30,7 @@ Python:
 ```python
 def aehash(password, salt, mem=500, ops=10):
     size = mem << 20  # mem MiB
+    # Inputs are SHA-512 hashed and truncated to 12 and 32 bytes
     nonce = sha(salt)[:12]
     key = sha(password)[:32]
     buf = bytes(size)     # Initially all zeroes
@@ -37,6 +38,7 @@ def aehash(password, salt, mem=500, ops=10):
         # AES256-GCM, returns size bytes ciphertext + 16 bytes GCM tag
         buf = aes(buf[:size], None, nonce, key)
         key = buf[-32:]   # 16 encrypted bytes + GCM tag
+    # Hash the final key for output
     return sha(key)[:32]
 ```
 
