@@ -15,6 +15,7 @@ int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, 
   crypto_hash_sha512(nonce, salt, saltlen);
   crypto_hash_sha512(key, pw, pwlen);
   while (ops--) {
+    // In-place encryption, appends the 16 byte tag after size bytes of ciphertext
     crypto_aead_aes256gcm_encrypt(buf, &outsize, buf, size, NULL, 0, NULL, nonce, key);
     memcpy(key, buf + size - 16, 32);
   }

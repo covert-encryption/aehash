@@ -64,7 +64,7 @@ async function aehash(password, salt, mem, ops) {
 C:
 ```c
 int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, size_t saltlen, unsigned mem, unsigned ops) {
-  size_t size = mem << 20ull;
+  size_t size = (size_t)mem << 20;
   unsigned long long outsize;
   uint8_t nonce[64], key[64];  // 64 to fit an entire SHA-512
   uint8_t* buf = calloc(1, size + 16);  // 16 extra for GCM tag
@@ -72,6 +72,7 @@ int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, 
   crypto_hash_sha512(nonce, salt, saltlen);
   crypto_hash_sha512(key, pw, pwlen);
   while (ops--) {
+    // In-place encryption, appends the 16 byte tag after size bytes of ciphertext
     crypto_aead_aes256gcm_encrypt(buf, &outsize, buf, size, NULL, 0, NULL, nonce, key);
     memcpy(key, buf + size - 16, 32);
   }
