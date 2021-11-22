@@ -19,10 +19,14 @@ int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, 
     crypto_aead_aes256gcm_encrypt(buf, &outsize, buf, size, NULL, 0, NULL, nonce, key);
     memcpy(key, buf + size - 16, 32);
   }
-  free(buf);
   // Hash the final key before output
   crypto_hash_sha512(key, key, 32);
   memcpy(hash, key, 32);
+  // Zero and free the buffers used
+  memset(nonce, 0, sizeof nonce);
+  memset(key, 0, sizeof key);
+  memset(buf, 0, size + 16);
+  free(buf);
   return 0;
 }
 
