@@ -32,11 +32,12 @@ def aehash(password, salt, mem=500, ops=10):
     size = mem << 20  # mem MiB
     nonce = sha(salt)[:12]
     key = sha(password)[:32]
-    buf = bytes(size)
+    buf = bytes(size)     # Initially all zeroes
     for i in range(ops):
-        buf = AESGCM(key).encrypt(nonce, buf[:size], None)
-        key = buf[-32:]  # 16 encrypted bytes + GCM tag
-    return key
+        # AES256-GCM, returns size bytes ciphertext + 16 bytes GCM tag
+        buf = aes(buf[:size], None, nonce, key)
+        key = buf[-32:]   # 16 encrypted bytes + GCM tag
+    return sha(key)[:32]
 ```
 
 Each round reads and writes the entire buffer with data that cannot be predicted without holding all the bytes output by the previous round. Preserving memory-hardness requires that passes cannot be run in parallel, which is accomplished because the next round cannot begin without the encryption key extracted from the authentication tag of the previous round. That tag depends on every byte of the ciphertext produced, so it cannot be known in advance.
@@ -48,14 +49,15 @@ async function aehash(password, salt, mem, ops) {
   const size = mem << 20  // mem MiB
   const iv = (await crypto.subtle.digest("SHA-512", salt)).slice(0, 12)
   let key = (await crypto.subtle.digest("SHA-512", password)).slice(0, 32)
-  let buf = new ArrayBuffer(size)
+  let buf = new ArrayBuffer(size)  // Initially all zeroes
   while (ops--) {
     const bufview = new DataView(buf, 0, size)
     const aeskey = await crypto.subtle.importKey("raw", key, "AES-GCM", false, ["encrypt"])
     buf = await crypto.subtle.encrypt({name: "AES-GCM", iv}, aeskey, bufview)
     key = buf.slice(size - 16, size + 16)  // 16 bytes ciphertext, 16 bytes GCM tag
   }
-  return key
+  // Hash the final key for output
+  return (await crypto.subtle.digest("SHA-512", key)).slice(0, 32)
 }
 ```
 
@@ -84,8 +86,10 @@ See the files in this repository for more complete examples. These snippets are 
 
 ## Design Choices
 
-The final key that would be used on the next round is output directly, rather than e.g. hashing the whole buffer. This is done because hashing is much slower than just returning a tag that already is equally well hashed. We could easily do another SHA-512 on the key itself without affecting performance, if there is any reason to do so. Otherwise any useless complexity is better avoided in crypto.
+The final key that would be used on the next round is hashed for output. Using the key rather than hashing the whole buffer is much faster, allowing for one or two more ops in the time that SHA-512 would take. Hashing is a bit moot because the key already depends on all bytes of ciphertext produced on the final round. If only some bytes of the ciphertext were used, and not the tag, an attacker could encrypt only those bytes, skipping most of the final iteration.
 
-The reuse of a nonce over all rounds may concern some. However, there is no conceivable reason why the key would ever be the same in any successive rounds, thus no changes in nonce are needed. Another related concern is that both the key and and the nonce may be identical of an implementation hashes the same password with the same nonce (or uses no nonce). This obviously produces the exact same process as before, and the same hash output, as is expected. In a normal setting the security of AEAD ciphers is completely destroyed if (key, nonce) are both reused. However, this is only a problem when the attacker has access to the ciphertext, which is not possible here, given that the internal buffer is never revealed.
+SHA-512 of all inputs and the output provides additional security with negligible computational cost or added complexity of implementation. In particular, the output hashing avoids revealing the intermediate rounds' encryption keys to an attacker who can manipulate the ops paramater and obtain the hashes created for a particular but unknown pair of (password, salt).
+
+The reuse of a nonce over all rounds may concern some. However, there is no conceivable reason why the key would ever be the same in any successive rounds, thus no changes in nonce are needed. Another related concern is that both the key and and the nonce may be identical when the same password is hashed again with the same nonce. This obviously produces the exact same process each time, and the same hash output, as is expected. In a normal setting the security of AEAD ciphers is completely destroyed if (key, nonce) are both reused. However, this is only a problem when the adversary has access to the ciphertext, which is not possible here, given that the internal buffer and keys are never revealed.
 
 Please file an issue if you think that anything of the above is wrong, or if you find any other problem with this algorithm.

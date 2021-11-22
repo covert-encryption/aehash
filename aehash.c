@@ -6,11 +6,12 @@
 #include <string.h>
 
 int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, size_t saltlen, unsigned mem, unsigned ops) {
-  size_t size = mem << 20ull;
+  if (!mem || ops < 2 || (uint64_t)mem * ops > 100000) return 1;
+  size_t size = (size_t)mem << 20;
   unsigned long long outsize;
   uint8_t nonce[64], key[64];  // 64 to fit an entire SHA-512
   uint8_t* buf = calloc(1, size + 16);
-  if (!buf) return 1;
+  if (!buf) return 2;
   crypto_hash_sha512(nonce, salt, saltlen);
   crypto_hash_sha512(key, pw, pwlen);
   while (ops--) {
@@ -18,9 +19,18 @@ int aehash(uint8_t* hash, uint8_t const* pw, size_t pwlen, uint8_t const* salt, 
     memcpy(key, buf + size - 16, 32);
   }
   free(buf);
+  // Hash the final key before output
+  crypto_hash_sha512(key, key, 32);
   memcpy(hash, key, 32);
   return 0;
 }
+
+// Map aehash return codes to messages
+const char* statusmessages[] = {
+  "All OK.\n",
+  "Invalid MEM/OPS arguments.\n",
+  "Unable to allocate memory\n"
+};
 
 int main(int argc, char** argv) {
   if (argc != 5) {
@@ -30,12 +40,10 @@ int main(int argc, char** argv) {
   }
   void const *pass = argv[1], *salt = argv[2];
   unsigned mem = atoi(argv[3]), ops = atoi(argv[4]);
-  if (!mem || !ops || (uint64_t)mem * ops > 100000) { fprintf(stderr, "Invalid MEM/OPS arguments.\n"); return 1; }
-
   // Hash and print in hex
   uint8_t hash[32];
   int ret = aehash(hash, pass, strlen(pass), salt, strlen(salt), mem, ops);
-  if (ret) { fprintf(stderr, "Unable to allocate memory\n"); return 1; }
+  if (ret) { fprintf(stderr, statusmessages[ret]); return 1; }
   for (unsigned i = 0; i < 32; ++i) printf("%02x", hash[i]);
   printf("\n");
 }

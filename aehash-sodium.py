@@ -1,24 +1,32 @@
+"""An optimized Python implementation based on sodium."""
+# You need to have the C library libsodium installed
+
 import os
 from hashlib import sha512
-from sys import argv
+from sys import argv, stderr
+from typing import Optional
 from unicodedata import normalize
 
 import cffi
 
 
-def aehash(password, salt, mem=10, ops=2):
+def aehash(password: bytes, salt: bytes, mem=500, ops=10) -> bytes:
+    """Derive a 32-byte hash for (password, salt) using mem MiB and ops iterations."""
+    if mem <= 0 or ops < 2 or mem * ops > 100000:
+        raise ValueError(f"Invalid cost parameters {mem=} {ops=}")
     nonce = sha(salt)[:12]
     key = sha(password)[:32]
     size = mem << 20
-    buf = memoryview(bytearray(size + 16))
+    buf = memoryview(bytearray(size + 16))  # Initially all zeroes read-write buffer
     for i in range(ops):
-        aes(buf, buf[:-16], None, nonce, key)
-        key = bytes(buf[-32:])  # 16 encrypted bytes + 16 bytes gcm tag
-    return key
+        # AES256-GCM in-place encryption of size bytes. Adds GCM tag at the end.
+        aes(buf, buf[:-16], None, nonce, key) 
+        key = bytes(buf[-32:])  # 16 encrypted bytes + 16 bytes GCM tag
+    # Hash the final key for output
+    return sha(key)[:32]
 
 
 # Have to use the C API of libsodium directly because no suitable bindings exist.
-# You need to have libsodium installed.
 ffi = cffi.FFI()
 ffi.cdef(R"""
 int crypto_aead_aes256gcm_encrypt(
@@ -31,7 +39,7 @@ int crypto_aead_aes256gcm_encrypt(
 """)
 lib = ffi.dlopen("libsodium" if os.name == "nt" else "sodium")
 
-def aes(ciphertext, message, aad, nonce, key):
+def aes(ciphertext: bytes, message: bytes, aad: Optional[bytes], nonce: bytes, key: bytes) -> int:
     if len(ciphertext) < len(message) - 16:
         raise ValueError("Ciphertext must be 16 bytes longer than message")
     if len(nonce) != 12:
@@ -41,12 +49,7 @@ def aes(ciphertext, message, aad, nonce, key):
     ciphertext = ffi.from_buffer(ciphertext)
     message = ffi.from_buffer(message)
     nonce = ffi.from_buffer(nonce)
-    if aad:
-        aad = ffi.from_buffer(aad)
-        aadlen = len(aad)
-    else:
-        aad = ffi.NULL
-        aadlen = 0
+    aadlen, aad = (len(aad), ffi.from_buffer(aad)) if aad else (0, ffi.NULL)
     outsize = ffi.new("unsigned long long *")
     # According to docs it always returns 0
     lib.crypto_aead_aes256gcm_encrypt(
@@ -62,10 +65,11 @@ def aes(ciphertext, message, aad, nonce, key):
     )
     return outsize
 
-def sha(data):
+def sha(data: bytes) -> bytes:
     return sha512(data).digest()
 
-def encode(s):
+def encode(s: str) -> bytes:
+    """Encode text into bytes with Unicode normalization."""
     return normalize("NFKC", s).encode()
 
 def main():
