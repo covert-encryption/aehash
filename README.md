@@ -1,5 +1,7 @@
 # Authenticated Encryption Hasher
 
+This was an experiment we did to find a browser-fast password hashing algorithm. It has weaknesses fixing of which would likely remove the speed gains. We keep this repository archived in case anyone is interested, but recommend instead using [Argon2-browser](https://github.com/antelle/argon2-browser) which already runs reasonably fast in its new Wasm SIMD implementation.
+
 ## Introduction
 
 While [Argon2](https://github.com/P-H-C/phc-winner-argon2) and [Scrypt](http://www.tarsnap.com/scrypt.html) are great, browsers don't support them, or any other modern password hashing. There are only Javascript and Web Assembly implementations available, but unfortunately any hashing performed even with the fastest implementations is about ten times slower than native code, while both are still single threaded. Cracking passwords, employing all CPU cores, is then roughly 100 times faster than what it takes for a user to have his password hashed in a browser on the same desktop PC.
